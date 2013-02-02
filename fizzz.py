@@ -51,10 +51,7 @@ print "File Size Subdirectory Sorter\n\n"
 # Define our parameters and parse with argparse module.
 argParser = argparse.ArgumentParser()
 
-progname = sys.argv[0]
-
-for afile in os.listdir("."):
-    print afile 
+progname = os.path.abspath(sys.argv[0])
 
 # Define arguments.
 argParser.add_argument("-n","--numdirs",default=multiprocessing.cpu_count(),help="The number of directories to create and split into.", type=int) 
@@ -82,3 +79,47 @@ if (not os.path.exists(srcDir)):
     print "Source directory {0} does not exist!".format(srcDir)
     sys.exit(1)
 
+print "Attempting to sort files in '{0}' into {1} subdirectories.".format(srcDir,numDirs)
+print "Subdirectories will start with '{0}'.".format(dirPrefix)
+
+print "\nReading source directory..."
+
+fileDataHash = {}
+
+if debugMode: print "Ignoring non-standard files matching .*{0}\.[^{1}]*$".format(re.escape(os.sep),re.escape(os.sep))
+
+for eachFile in os.listdir(srcDir):
+    eachFile = os.path.normpath(os.path.abspath(srcDir + "/" + eachFile))
+
+    if os.path.isdir(eachFile):
+        print "Skipping directory {0}".format(eachFile)
+        continue
+
+    if os.path.islink(eachFile):
+        print "Skipping link {0}".format(eachFile)
+        continue
+
+    if re.match(".*{0}\.[^{1}]*$".format(re.escape(os.sep),re.escape(os.sep)),eachFile):
+        print "Skipping non-standard file: {0}".format(eachFile)
+        continue
+
+    if os.path.samefile(os.path.abspath(progname),eachFile):
+        print "Skipping myself: {0}".format(eachFile)
+        continue
+
+    if os.path.isfile(eachFile):
+        fileDataHash[eachFile]=os.path.getsize(eachFile)
+
+numFiles = len(fileDataHash)
+print "\nNumber of files found: {0}".format(numFiles)
+
+totalSize = 0
+for eachValue in fileDataHash.values():
+    totalSize += eachValue
+
+print "Total size: {0} bytes".format(totalSize)
+
+if debugMode:
+    print "Collected files and sizes:"
+    for eachKey in fileDataHash.keys():
+        print "{0}\t{1}".format(eachKey,fileDataHash[eachKey])
