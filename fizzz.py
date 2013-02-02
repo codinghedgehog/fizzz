@@ -2,14 +2,12 @@
 #
 # Fizzz - File Size Subdirectory Sorter (Fisss, or Fizzz)
 #
-# Usage: fizzz.py [ -n <number of directories to split into> ] [ -s <src dir> ] [ -d <dest dir> ] [ -p <dir name prefix> ] [ -debug ] [ -mv ] [ -cp ]
+# Usage: fizzz.py [ -n <number of directories to split into> ] [ -s <src dir> ] [ -d <dest dir> ] [ -p <dir name prefix> ] [ -debug ] [ -mv ] [ -cp ] [ -t ]
 #
 # (File Size Subdirectory Sorter - Fizzz/Fisss) - Small (and rather
 # project-specific) utility that takes a list of files or files in a directory
 # and moves them into a user-specified number of folders such that the total size
-# of each folder is roughly the same. This script takes a BLAST result file and
-# tabulates the number of top hits for each match across all the QUERYs in the
-# file.
+# of each folder is roughly the same.
 #
 # Parameters (all optional):
 # -n = Number of directories to sort the files into.  Defaults to number of processors, if detectable.
@@ -18,6 +16,8 @@
 # -d <dest dir> = Specify the target directory containing the subdirecotries to be created.  Default is current directory.
 # -p <dir name prefix> = Specify a prefix for the directories created (default is processor: processor1, processor2, etc.).
 # -mv = Move the files into the subdirectories. Default is to copy the files.
+# -t = Test.  Just report the sorting results but DON'T actually create any directories or move any files.
+# 
 #
 
 import sys
@@ -28,13 +28,14 @@ import string
 import cStringIO
 import math
 import multiprocessing
+import shutil
 
 VERSION = '1.0.0'
 
 # CLASSES #
 
 class FizzzDir:
-    """Fizzz's representation of a target subdirectory for use during file sorting."""
+    """Fizzz's representation of a target subdirectory for use during file sort calculations."""
 
     def __init__(self,name,targetdir=os.getcwd()):
         self.name = name 
@@ -57,6 +58,10 @@ class FizzzDir:
         """Returns the current total size of assigned files."""
         return sum(self.contents.values())
 
+    def numFiles(self):
+        """Returns the current total number of assigned files."""
+        return len(self.contents)
+
     def files(self):
         """Returns a list of the file names currently assigned to this dir object."""
         return self.contents.keys()
@@ -67,8 +72,15 @@ class FizzzDir:
 
     def realize(self,move=False):
         """Actually copy (default) or move the assigned files into this directory, creating it if need be."""
-        pass
+        if not os.path.exists(self.fullPath):
+            os.mkdir(self.fullPath)
 
+        for fileItem in self.contents:
+            filename = fileItem[0]
+            if move:
+                shutil.move(filename,self.fullPath)
+            else:
+                shutil.copy2(filename,self.fullPath)
 
 # FUNCTIONS #
 
@@ -121,6 +133,7 @@ argParser.add_argument("-s","--srcdir",default=".",help="Directory with the file
 argParser.add_argument("-d","--destdir",default=".",help="Base directory that will contain the subdirectories with the sorted files.  Default is the current working directory")
 argParser.add_argument("-p","--prefix",default="processor",help="Prefix for the directory name.  Default is 'processor'.")
 argParser.add_argument("-mv","--move",action="store_true",help="Move the files into the subdirectories while sorting.  Default is to copy the files.")
+argParser.add_argument("-t","--test",action="store_true",help="Calculate file assignations, but do not make any actual changes to the filesystem.")
 
 args = argParser.parse_args()
 
@@ -133,14 +146,18 @@ destDir = args.destdir
 numDirs = args.numdirs
 dirPrefix = args.prefix
 doMove = args.move
+dryRun = args.test
 
-if args.debug:
+if debugMode:
     print "Argparse results: "
     print args
     
 if (not os.path.exists(srcDir)):
     print "Source directory {0} does not exist!".format(srcDir)
     sys.exit(1)
+
+if dryRun:
+    print "*** THIS IS A TEST RUN ONLY: No changes to the file system will be made. ***"
 
 print "Attempting to sort files in '{0}' into {1} subdirectories.".format(srcDir,numDirs)
 print "Subdirectories will be named starting with '{0}'.".format(dirPrefix)
@@ -210,9 +227,15 @@ dirList=[]
 for i in range(numDirs):
     dirList.append(FizzzDir("{0}{1}".format(dirPrefix,i),os.path.abspath(destDir)))
 
+# Assign the initial file to each directory, starting with the largest file.
 for fizzzDir in dirList:
     fizzzDir.assignFile(sortedFileList.pop())
 
+# Fill the smallest directories first when assigning the rest of the files.
+dirList.reverse()
+
+# Fill out the directories that have size < avgSize.  Add files to each that minimizes the difference between
+# their current size and avgSize.
 while sortedFileList:
     for fizzzDir in dirList:
         assignNextBestFile(fizzzDir,sortedFileList,avgSize)
@@ -221,3 +244,24 @@ if debugMode:
     print "Final sort results:"
     for fizzzDir in dirList:
         print fizzzDir
+
+if dryRun:
+    print "\n*** Test results:\n"
+    for fizzzDir in dirList:
+        print "Name: " + fizzzDir.fullPath
+        print "Number of files: {0}".format(fizzzDir.numFiles())
+        print "Total Size: {0}".format(fizzzDir.totalSize())
+        print ""
+    sys.exit(0)
+else:
+    if move:
+        print "Moving files..."
+    else:
+        print "Copying files..."
+
+    for fizzzDir in dirList:
+        fizzzDir.realize(move)
+
+print "Done!"
+
+
